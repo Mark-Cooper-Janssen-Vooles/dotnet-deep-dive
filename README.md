@@ -2,10 +2,9 @@
 
 Contents:
 - [Fundamentals](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/?view=aspnetcore-8.0)
-  - App start up
-  - Dependency Injection (Services)
-  - Native AOT
-  - Middleware
+  - [App start up](#app-startup)
+  - [Dependency Injection (Services)](#dependency-injection-services)
+  - [Middleware](#middleware)
   - Host
   - Configuration
   - Options
@@ -55,14 +54,22 @@ Contents:
 ---
 
 ## Fundamentals 
+
+### App Startup 
 - `Program.cs`
   - application startup code is in Program.cs file 
     - services required by the app are configured here
     - app's request handling pipeline is defined as a series of middleware components 
+  - There are different ways to do this, probably depends on the type of Host used
+  - Generally there will be a services registration area, i.e. `builder.services.AddSingleton<IOrganisationProvider, OrganisationProvider>();` and a middleware registration area that follows afterward, i.e. `app.UseAuthorization();`
 
 
-- Dependency Injection (services)
+### Dependency Injection (services)
   - dependency injection or DI makes configured services available throughout the app
+  - it is a technique intended to achieve [inversion of control](https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles#dependency-inversion)
+    - direction of dependency in the direction of abstraction, not implementation details
+    - allows for easier testing and means that different implementations of these interfaces can easily be plugged in without modifying the code (open-closed principle)
+  - a depencency is an object that another object depends on
   - services are added to the DI container, i.e.:
 ````c#
 var builder = WebApplication.CreateBuilder(args);
@@ -93,8 +100,39 @@ public class SomeClass
   }
 }
 ````
+- [Service lifetimes](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection#service-lifetimes)
+  - Services can be registered with one of the following lifetimes:
+    - Transient
+    - Scoped
+    - Singleton
+  - Transient:
+    - created each time they're requested from the service container
+  - Scoped:
+    - A scoped lifetime indicates that services are created once per client request (connection)
+  - Singleton
+    - singleton lifetime services are created either:
+      - the first time they're requested
+      - by the developer, when providing an implementation instance directly to the container (an approach rarely needed)
+    - every subsequent request of the service implementation from the DI container uses the same instance.
+- Keyed Services
+  - in dotnet 8 there is support for registrations of services based on a key, so you can register multiple services with a different key and use it for the lookup. i.e.:
+````c#
+services.AddKeyedSingleton<IMessageWriter, MemoryMessageWriter>("memory");
+services.AddKeyedSingleton<IMessageWriter, QueueMessageWriter>("queue");
 
-- Middleware 
+// example of the constructor of the class that uses IMessageWriter: 
+public class ExampleService
+{
+    public ExampleService(
+        [FromKeyedServices("queue")] IMessageWriter writer)
+    {
+        // Omitted for brevity...
+    }
+}
+````
+
+
+### Middleware 
   - The request handling pipeline is composed as a series of middleware components. Each component performs operations on an HttpContext and either invokes the next middleware in the pipeline or terminates the request. 
   - Middle ware uses the [chain of responsibility pattern](https://refactoring.guru/design-patterns/chain-of-responsibility)
   - by convention, a middleware component is added to the pipeline by invoking a `Use{Feature}` extension method. I.e.:
@@ -208,3 +246,6 @@ public class IndexModel : PageModel
     - Integrates with Polly - for transient fault handling. (circuit breaker)
     - Manages the pooling and lifetime of underlying `HttpClientHandler` instances to avoid common DNS problems that occur when managing `HttpClient` lifetimes manually. 
     - Adds a configurable logging experience via ILogger for all requests sent through clients created by the factory. 
+
+
+  /// note: up to middleware fleshing out: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0
