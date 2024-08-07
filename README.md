@@ -5,7 +5,7 @@ Contents:
   - [App start up](#app-startup)
   - [Dependency Injection (Services)](#dependency-injection-services)
   - [Middleware](#middleware)
-  - Host
+  - [Host](#host)
   - Configuration
   - Options
   - Environments
@@ -49,7 +49,6 @@ Contents:
   - Diagnostic tools
   - Load and stress testing 
   - Event counters 
-
 
 ---
 
@@ -134,6 +133,36 @@ public class ExampleService
 
 ### Middleware 
   - The request handling pipeline is composed as a series of middleware components. Each component performs operations on an HttpContext and either invokes the next middleware in the pipeline or terminates the request. 
+    - Each middleware is responsible for invoking the next component or short-circuiting the pipeline (i.e. terminating the request) - if it short-circuits, its called a terminal middleware because it prevents further middleware from processing the request.
+  - Request delegates are used to build the request pipeline - they handle each HTTP request
+    - Configured using `Run`, `Map` and `Use` extension methods
+      - specified either as an in-line anonymous method (in-line middleware) or defined in a reusable class
+
+![alt text](middleware-execution.png)
+  - each middleware delegate can perform operations before and after the next delegate - the order matters.
+    - i.e. exception-handling delegates should be called early in the pipeline so they can catch exceptions that occur in later stages of the pipeline.
+````c#
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// example of an "in-line anonymous middleware" 
+app.Use(async (context, next) =>
+{
+    // Do work that can write to the Response => i.e. before the next delegate is called
+    await next.Invoke(); // this calls the next delegate in the pipeline
+    // Do logging or other work that doesn't write to the Response => i.e. after the above delegate is completed. 
+});
+
+app.Run(async context =>
+{
+    await context.Response.WriteAsync("Hello from 2nd delegate.");
+});
+
+app.Run();
+````
+
+- `Run` delegates don't receive a `next` parameter. The first `Run` delegate is always terminal and terminates the pipeline. `Run` is a convention. Some middleware 
+
   - Middle ware uses the [chain of responsibility pattern](https://refactoring.guru/design-patterns/chain-of-responsibility)
   - by convention, a middleware component is added to the pipeline by invoking a `Use{Feature}` extension method. I.e.:
 ````c#
@@ -162,7 +191,62 @@ app.MapDefaultControllerRoute();
 app.Run();
 ````
 
-- Host
+- Middleware order
+  - the below diagram shows a request processing pipeline for a dotnet core MVC / razor page app. 
+  - existing middlewares are ordered and custom middlewares are added
+
+  ![alt text](mvc-razor-middlewares.png)
+
+  - this is when explicitly calling app.UseRouting - if you don't call this, the routing middleware runs at the beginning of the pipeline by default.
+
+  - some of the existing pre-built middleware must be called in certain order, see: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0
+    - i.e. `UseCors` must be before `UseAuthentication` which must be before `UseAuthorisation` etc.
+
+
+- Branch the middleware pipeline
+  - `Map` extensions are used as a convention for branching the pipeline. Map branches the request pipeline based on the given request path. If the request path starts with the given path, the branch is executed. 
+````c#
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.Map("/map1", HandleMapTest1);
+
+app.Map("/map2", HandleMapTest2);
+
+app.Run(async context =>
+{
+    await context.Response.WriteAsync("Hello from non-Map delegate.");
+});
+
+app.Run();
+
+static void HandleMapTest1(IApplicationBuilder app)
+{
+    app.Run(async context =>
+    {
+        await context.Response.WriteAsync("Map Test 1");
+    });
+}
+
+static void HandleMapTest2(IApplicationBuilder app)
+{
+    app.Run(async context =>
+    {
+        await context.Response.WriteAsync("Map Test 2");
+    });
+}
+````
+- in the above code, going to 'localhost:1234' responds with "Hello from non-Map delegate"
+- going to 'localhost:1234/map1' responds with "Map test 1" etc
+
+
+- Built-in middleware: 
+  - info here: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#built-in-middleware
+
+
+---
+
+### Host
   - On startup, a dotnet app builds a host. The host encapsulates all of the app's resources, such as:
     - A HTTP server implementation
     - Middleware components
