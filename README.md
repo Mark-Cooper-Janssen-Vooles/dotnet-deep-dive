@@ -445,4 +445,4 @@ public class IndexModel : PageModel
     - Adds a configurable logging experience via ILogger for all requests sent through clients created by the factory. 
 
 
-  /// note: up to middleware fleshing out: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0
+  /// note: up to configuration: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0
