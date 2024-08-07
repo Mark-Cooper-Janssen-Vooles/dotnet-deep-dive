@@ -5,8 +5,10 @@ Contents:
   - [App start up](#app-startup)
   - [Dependency Injection (Services)](#dependency-injection-services)
   - [Middleware](#middleware)
+    - [Custom middleware example](#example-of-writing-a-custom-middleware)
   - [Host](#host)
-  - Configuration
+  - [Servers](#servers)
+  - [Configuration](#configuration)
   - Options
   - Environments
   - Logging and monitoring 
@@ -243,6 +245,8 @@ static void HandleMapTest2(IApplicationBuilder app)
 - Built-in middleware: 
   - info here: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#built-in-middleware
 
+#### Example of writing a custom middleware
+- https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/write?view=aspnetcore-8.0
 
 ---
 
@@ -259,15 +263,25 @@ static void HandleMapTest2(IApplicationBuilder app)
     - ASP.NET Core WebHost
   - `WebApplication` and `WebApplicationBuilder`are recommended and used in all dotnet core templates. 
   - `WebHost` is available only for backward compatibility. 
-  - `WebApplication` example: 
+  - `WebApplication` / `WebApplicationBuilder` example: 
 ````c#
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args); // => this is an instance of 'WebApplicationBuilder'.
 
-// Add services to the container.
-builder.Services.AddRazorPages();
-builder.Services.AddControllersWithViews();
+// Use the builder to configure services
+builder.Services.AddControllers();
+builder.Services.AddScoped<ITodoRepository, TodoRepository>(); // => DI injection example.
 
-var app = builder.Build();
+var app = builder.Build(); // => this is an instance of 'WebApplication'.
+
+// Use the app to configure middleware and endpoints
+app.UseRouting();
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapControllers();
+});
+
+// Run the application
+app.Run();
 ````
   - The `WebApplicationBuilder` configures a host with a set of default options, such as:
     - Use Kestrel as the web server and enable IIS integration
@@ -276,15 +290,114 @@ var app = builder.Build();
   - The Generic Host allows other types of apps for non-web scenarios like cruss-cutting framework extensions
 
 
-- Servers
+#### WepApplication Deep Dive
+
+````c#
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapGet("/", () => "Hello World!");
+
+app.Run();
+````
+- can also use this - `WebApplication.Create` initializes a new instance of WebApplication with preconfigured defaults:
+
+````c#
+var app = WebApplication.Create(args);
+
+app.MapGet("/", () => "Hello World!");
+
+app.Run();
+````
+
+- Working with Ports
+  - when a web app is created with visual studio or `dotnet new`, a properties/launchSettings.json file is created that specifies the ports the app responds to
+  - you can also set the port in the startup.cs, including multiple ports:
+
+````c#
+var app = WebApplication.Create(args);
+
+app.Urls.Add("http://localhost:3000");
+app.Urls.Add("http://localhost:4000");
+
+app.MapGet("/", () => "Hello World");
+
+app.Run();
+````
+
+  - You can also set the port from the command line: `dotnet run --urls="https://localhost:7777"`
+  - You can also read the port from the environment:
+    - the preferred way being setting the ASPNETCORE_URLS environment variable, i.e. `ASPNETCORE_URLS=http://localhost:3000`
+    - or for multiple ports, `ASPNETCORE_URLS=http://localhost:3000;https://localhost:5000`
+
+````c#
+var app = WebApplication.Create(args);
+
+var port = Environment.GetEnvironmentVariable("PORT") ?? "3000";
+
+app.MapGet("/", () => "Hello World");
+
+app.Run($"http://localhost:{port}");
+````
+
+- Read the environment example
+
+````c#
+var app = WebApplication.Create(args);
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/oops");
+}
+
+app.MapGet("/", () => "Hello World");
+app.MapGet("/oops", () => "Oops! An error happened.");
+
+app.Run();
+````
+
+- Read the configuration system: (appSettings.json)
+
+````c#
+var app = WebApplication.Create(args);
+
+var message = app.Configuration["HelloKey"] ?? "Config failed!";
+
+app.MapGet("/", () => message);
+
+app.Run();
+````
+
+- Access the DI container to add custom services 
+- Add middleware 
+
+````c#
+var builder = WebApplication.CreateBuilder(args);
+
+// Add a custom scoped service.
+builder.Services.AddScoped<ITodoRepository, TodoRepository>(); // NOTE: done before builder.Build() is called, then middleware added to app
+var app = builder.Build();
+app.UseFileServer(); // add middleware
+
+app.Run()
+````
+
+---
+
+
+### Servers
   - dotnet core apps use a HTTP server implementation to listen for HTTP request. The server surfaces requests to the app as a set of request features composed into a HttpContext 
   - Kestrel is a cross-platform web server, it runs on windows / mac / linux. 
   - IIS and HTTP.sys are for windows only. 
 
-- Configuration
+---
+
+### Configuration
   - dotnet provides a configuration framework that gets settings as name-value pairs from an ordered set of configuration providers. Built-in config providers are available as .json or .xml files, environment variables, and command-line arguments.
   - by default they're read from `appsettings.json`, environment variables and command line arguments
   - when the apps config is loaded, values from environment variables override values from `appsettings.json`
+
+---
 
 - Environments
   - Execution environments such as Development, Staging and Production are available in dotnet core. Specify the environment an app is running in by setting the `ASPNETCORE_ENVIRONMENT` environment variable. It gets read at startup and stores the value in `IWebHostEnvironment` implementation.
