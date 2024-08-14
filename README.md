@@ -9,8 +9,7 @@ Contents:
   - [Host](#host)
   - [Servers](#servers)
   - [Configuration](#configuration)
-  - Options
-  - Environments
+  - [Environments](#environments)
   - Logging and monitoring 
   - HttpContext
   - Routing
@@ -393,13 +392,157 @@ app.Run()
 ---
 
 ### Configuration
+- https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0
   - dotnet provides a configuration framework that gets settings as name-value pairs from an ordered set of configuration providers. Built-in config providers are available as .json or .xml files, environment variables, and command-line arguments.
   - by default they're read from `appsettings.json`, environment variables and command line arguments
   - when the apps config is loaded, values from environment variables override values from `appsettings.json`
 
+- Host configuration
+  - dotnet templates create a `webApplicationBuilder` which contains the host
+    - only configuration that is necessary for the host should be done in "host configuration", the rest should be done in "application configuration"
+````c#
+var builder = WebApplication.CreateBuilder(args);
+````
+  - the initialized `WebApplicationBuilder` (above is a builder) provides default configuration for the app in the following order, from highest to lowest priority:
+    - command-line arguments
+    - non-prefixed env variables
+    - user secrets (when the app runs in the development environment) 
+    - appsettings.{Environment}.json
+    - appsettings.json using
+    - a fallback
+  - i.e. appsettings.json gets overriden by appsettings.Prod.json which gets overridden by command-line arguments
+
+- application config
+  - overrides host config 
+
+````c#
+{
+  {
+    "Position": {
+      "Title": "Editor",
+      "Name": "Joe Smith"
+    },
+    "MyKey": "My appsettings.json Value",
+    "Logging": {
+      "LogLevel": {
+        "Default": "Information",
+        "Microsoft": "Warning",
+        "Microsoft.Hosting.Lifetime": "Information"
+      }
+    },
+    "AllowedHosts": "*"
+  }
+}
+````
+  - naming of environment vaiables should reflect the structure of an appsettings.json file, like so: `Logging_LogLevel_Default`  will override whats in the appsettings.json, i.e. replacing "Information" when set
+  - accessing them looks somehting like this:
+
+````c#
+public class TestModel : PageModel
+{
+    // requires using Microsoft.Extensions.Configuration;
+    private readonly IConfiguration Configuration;
+
+    public TestModel(IConfiguration configuration)
+    {
+        Configuration = configuration;
+    }
+
+    public ContentResult OnGet()
+    {
+        var myKeyValue = Configuration["StmpServer"];
+        var title = Configuration["Position:Title"];
+        var name = Configuration["Position:Name"];
+        var defaultLogLevel = Configuration["Logging:LogLevel:Default"];
+
+
+        return Content($"MyKey value: {myKeyValue} \n" +
+                       $"Title: {title} \n" +
+                       $"Name: {name} \n" +
+                       $"Default Log Level: {defaultLogLevel}");
+    }
+````
+
+- Configuration keys:
+  - case insensitive
+- Configuration values:
+  - are strings
+  - null values can't be stored
+
+- ConfigurationBinder API: 
+  - GetValue extracts a single value and converts it to the specified type
+  - if `NumberKey` isn't available, the default value of 99 is used
+
+````c#
+public class TestNumModel : PageModel
+{
+    private readonly IConfiguration Configuration;
+
+    public TestNumModel(IConfiguration configuration)
+    {
+        Configuration = configuration;
+    }
+
+    public ContentResult OnGet()
+    {
+        var number = Configuration.GetValue<int>("NumberKey", 99);
+        return Content($"{number}");
+    }
+}
+````
+
+- access configuration with DI
+
+````c#
+public class Service
+{
+    private readonly IConfiguration _config;
+
+    public Service(IConfiguration config) =>
+        _config = config;
+
+    public void DoSomething()
+    {
+        var configSettingValue = _config["ConfigSetting"];
+
+        // ...
+    }
+}
+````
+
+- access configuration in `Program.cs`
+
+````c#
+// appsettings.json: 
+{
+  ...
+  "KeyOne": "Key One Value",
+  "KeyTwo": 1999,
+  "KeyThree": true
+}
+
+// program.cs:
+var builder = WebApplication.CreateBuilder(args);
+
+var key1 = builder.Configuration.GetValue<string>("KeyOne");
+
+var app = builder.Build();
+
+app.MapGet("/", () => "Hello World!");
+
+var key2 = app.Configuration.GetValue<int>("KeyTwo");
+var key3 = app.Configuration.GetValue<bool>("KeyThree");
+
+app.Logger.LogInformation("KeyOne: {KeyOne}", key1);
+app.Logger.LogInformation("KeyTwo: {KeyTwo}", key2);
+app.Logger.LogInformation("KeyThree: {KeyThree}", key3);
+
+app.Run();
+````
+
 ---
 
-- Environments
+### Environments
   - Execution environments such as Development, Staging and Production are available in dotnet core. Specify the environment an app is running in by setting the `ASPNETCORE_ENVIRONMENT` environment variable. It gets read at startup and stores the value in `IWebHostEnvironment` implementation.
     - `IWebHostEnvironment` is available anywhere in the app via dependency injection. 
 
