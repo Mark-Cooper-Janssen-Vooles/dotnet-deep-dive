@@ -543,8 +543,86 @@ app.Run();
 ---
 
 ### Environments
-  - Execution environments such as Development, Staging and Production are available in dotnet core. Specify the environment an app is running in by setting the `ASPNETCORE_ENVIRONMENT` environment variable. It gets read at startup and stores the value in `IWebHostEnvironment` implementation.
-    - `IWebHostEnvironment` is available anywhere in the app via dependency injection. 
+- dotnet configures app behavior based on the runtime environment using an environment variable:
+  1. DOTNET_ENVIRONMENT (env variable)
+  2. ASPNETCORE_ENVIRONMENT when `WebApplication.CreateBuilder` method is called - default app templates call this.
+    - the DOTNET_ENVIRONMENT value overrides ASPNETCORE_ENVIRONMENT when `WebApplicationBuilder` is used. 
+    - for other hosts i,e, `ConfigureWebHostDefaults` and `WebHost.CreateDefaultBuilder`, ASPNETCORE_ENVIRONMENT has higher precdence 
+- by default the `IHostEnvironment.EnvironmentName` can be set to any value but by default its "Development", "Staging", "Production"
+- 
+
+
+- Execution environments such as Development, Staging and Production are available in dotnet core. Specify the environment an app is running in by setting the `ASPNETCORE_ENVIRONMENT` environment variable. It gets read at startup and stores the value in `IWebHostEnvironment` implementation.
+  - `IWebHostEnvironment` is available anywhere in the app via dependency injection. 
+
+````c#
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddRazorPages();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Error");
+    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    app.UseHsts();
+}
+````
+
+- use the environment flag to set the environment: `dotnet run --environment Production`
+
+
+**Development**
+- launchSettings.json has information about the "Development" environment
+
+````json
+{
+  "iisSettings": {
+    "windowsAuthentication": false,
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:59481",
+      "sslPort": 44308
+    }
+  },
+  "profiles": {
+    "EnvironmentsSample": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "https://localhost:7152;http://localhost:5105",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
+````
+
+- the above example has two profiles: 
+  - EnvironmentsSample is used by default as its the first listed, i.e. when you go `dotnet run`, since commandName is "Project", it uses kestrel web server.
+  - IIS Express ises IISExpress.
+- you can select the profiles in visual studio clicking the drop down or via terminal `dotnet run --launch-profile "EnvironmentsSample"`
+
+**PRODUCTION**
+- prod should be configured to maximise security, performance, and application robustness. common settings that differ from development include:
+  - Caching
+  - Client-side resources are bundled, minified and potentially served from a CDN
+  - Diagnostic error pages disabled
+  - friendly error pages enabled
+  - production logging and monitoring enabled
+
+
 
 - Logging 
   - dotnet supports a logging API that works with a variety of built-in and third-party logging providers. Available providers include:
@@ -554,6 +632,7 @@ app.Run();
     - Windows Event Log 
     - TraceSource
   - to create logs, resolve an `ILogger<TCategoryName>` service from DI and call logging methods such as `LogInformation`, i.e.:
+
 ````c#
 public class IndexModel : PageModel
 {
