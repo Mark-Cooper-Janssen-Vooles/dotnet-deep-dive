@@ -10,7 +10,7 @@ Contents:
   - [Servers](#servers)
   - [Configuration](#configuration)
   - [Environments](#environments)
-  - Logging and monitoring 
+  - [Logging and monitoring](#logging-and-monitoring)
   - HttpContext
   - Routing
   - Handle errors
@@ -624,7 +624,7 @@ if (!app.Environment.IsDevelopment())
 
 
 
-- Logging 
+### Logging and Monitoring
   - dotnet supports a logging API that works with a variety of built-in and third-party logging providers. Available providers include:
     - Console
     - Debug
@@ -667,4 +667,4 @@ public class IndexModel : PageModel
     - Adds a configurable logging experience via ILogger for all requests sent through clients created by the factory. 
 
 
-  /// note: up to configuration: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0
+  /// note: up to logging and monitoring: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/logging/?view=aspnetcore-8.0
