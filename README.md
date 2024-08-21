@@ -11,6 +11,7 @@ Contents:
   - [Configuration](#configuration)
   - [Environments](#environments)
   - [Logging and monitoring](#logging-and-monitoring)
+      - [Health checks](#health-checks)
   - HttpContext
   - Routing
   - Handle errors
@@ -625,12 +626,15 @@ if (!app.Environment.IsDevelopment())
 
 
 ### Logging and Monitoring
-  - dotnet supports a logging API that works with a variety of built-in and third-party logging providers. Available providers include:
-    - Console
-    - Debug
-    - Event Tracing on Windows
-    - Windows Event Log 
-    - TraceSource
+- dotnet supports a logging API that works with a variety of built-in and third-party logging providers. Available providers include:
+  - Console
+  - Debug
+  - Event Tracing on Windows
+  - Windows Event Log 
+  - TraceSource
+- `var builder = WebApplication.CreateBuilder(args);` adds a default set of logging providers
+  - the above defaults can be overwritten by `builder.Logging.ClearProviders()` and `builder.Logging.AddConsole()`
+- Creating Logs
   - to create logs, resolve an `ILogger<TCategoryName>` service from DI and call logging methods such as `LogInformation`, i.e.:
 
 ````c#
@@ -655,6 +659,206 @@ public class IndexModel : PageModel
 }
 ````
 
+- Configuring logging is commonly provided by the `appsettings.{ENVIRONMENT}.json` files, i.e.
+
+````json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Debug",
+      "Microsoft.AspNetCore": "Warning",
+    },
+    "Debug": { // Debug provider.
+      "LogLevel": {
+        "Default": "Information", // Overrides preceding LogLevel:Default setting.
+        "Microsoft.Hosting": "Trace" // Debug:Microsoft.Hosting category.
+      }
+  }
+}
+````
+
+- "Default" and "Microsoft.AspNetCore" are specified, where "Microsoft.AspNetCore" applies to any categories that start with "Microsoft.AspNetCore" 
+- the LogLevel indicates the severity of the log and ranges from 0 to 6: Trace, Debug, Information, Warning, Error, Critical, and None (from more logs to less)
+- If no LogLevel is specified, logging defaults to the Information level. 
+- Logs below the minimum log level are not passed to the provider, logged or displayed. 
+- This has all the log providers enabled by default:
+
+````json
+{
+  "Logging": {
+    "LogLevel": { // No provider, LogLevel applies to all the enabled providers.
+      "Default": "Error",
+      "Microsoft": "Warning",
+      "Microsoft.Hosting.Lifetime": "Warning"
+    },
+    "Debug": { // Debug provider.
+      "LogLevel": {
+        "Default": "Information" // Overrides preceding LogLevel:Default setting.
+      }
+    },
+    "Console": {
+      "IncludeScopes": true,
+      "LogLevel": {
+        "Microsoft.AspNetCore.Mvc.Razor.Internal": "Warning",
+        "Microsoft.AspNetCore.Mvc.Razor.Razor": "Debug",
+        "Microsoft.AspNetCore.Mvc.Razor": "Error",
+        "Default": "Information"
+      }
+    },
+    "EventSource": {
+      "LogLevel": {
+        "Microsoft": "Information"
+      }
+    },
+    "EventLog": {
+      "LogLevel": {
+        "Microsoft": "Information"
+      }
+    },
+    "AzureAppServicesFile": {
+      "IncludeScopes": true,
+      "LogLevel": {
+        "Default": "Warning"
+      }
+    },
+    "AzureAppServicesBlob": {
+      "IncludeScopes": true,
+      "LogLevel": {
+        "Microsoft": "Information"
+      }
+    },
+    "ApplicationInsights": {
+      "LogLevel": {
+        "Default": "Information"
+      }
+    }
+  }
+}
+````
+
+- An example of adding a log to the /Test endpoint:
+````c#
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.AddConsole();
+
+var app = builder.Build();
+
+app.MapGet("/", () => "Hello World!");
+
+app.MapGet("/Test", async (ILogger<Program> logger, HttpResponse response) =>
+{
+    logger.LogInformation("Testing logging in Program.cs");
+    await response.WriteAsync("Testing");
+});
+
+app.Run();
+````
+
+- LogLevel can also be set by command line, env variables and other config 
+  - via command line: `set Logging__LogLevel__Microsoft=Information`
+
+- Logs are displayed:
+  - in visual studo, the debug output window when debugging 
+  - in the console window when the app is run with `dotnet run`
+
+- Log Category
+  - when an `ILogger` object is created, a category is specified. The category is included with each log message created by that instance of ILogger.
+  - the category string is arbitrary, but the convention is to use the fully qualified class name. i.e. in a controller, the name might be `ILogger<TodoApi.Controllers.TodoController> logger`
+
+- Log Level
+  - the Log method's first param, LogLevel, indicates the severity of the log. But most evelopers call Log{LOG LEVEL} extension methods, ie
+
+````c#
+[HttpGet]
+public IActionResult Test1(int id)
+{
+    var routeInfo = ControllerContext.ToCtxString(id);
+
+    _logger.Log(LogLevel.Information, MyLogEvents.TestItem, routeInfo);
+    _logger.LogInformation(MyLogEvents.TestItem, routeInfo); // the extension method, log level is "Information".
+
+    return ControllerContext.MyDisplayRouteInfo();
+}
+
+[HttpGet("{id}")]
+public async Task<ActionResult<TodoItemDTO>> GetTodoItem(long id)
+{
+    _logger.LogInformation(MyLogEvents.GetItem, "Getting item {Id}", id);
+
+    var todoItem = await _context.TodoItems.FindAsync(id);
+
+    if (todoItem == null)
+    {
+        _logger.LogWarning(MyLogEvents.GetItemNotFound, "Get({Id}) NOT FOUND", id);
+        return NotFound();
+    }
+
+    return ItemToDTO(todoItem);
+}
+````
+
+- in the above, `MyLogEvents.TestItem` is the event Id. 
+  - each log event can specify an id, which associates a set of events. i.e. dsplaying a list of items might all use the id of 1001. 
+- In terms of log levels,
+  - In Production, logging at trace, debug or information levels produces a high-volume of detailed log messages. 
+    - to control costs and not exceed data storage limits this isn't ideal 
+    - logging at Warning to Critical levels should provide few log messages
+  - In development:
+    - set to warning
+    - add trace, debug or info when troubleshooting.
+    - to limit output, set trace, debug or info only for the categories under investigation. 
+
+- each log API uses a message template, which can contain placeholders for which arguments are pvodied. i.e. above the LogWarning, ` "Get({Id}) NOT FOUND"`
+- the order of parameters, not the placeholder names determines which params are used in values in log messages. i.e. `_logger.LogInformation("Parameters: {Pears}, {Bananas}, {Apples}", apples, pears, bananas);` would actually log in this order: "Paramters: apples, bears, bananas"
+
+- Log Exceptions
+  - logger methods have overloads that take an exception parameter:
+
+````c#
+catch (Exception ex)
+{
+    _logger.LogWarning(MyLogEvents.GetItemNotFound, ex, "TestExp({Id})", id);
+    return NotFound();
+}
+````
+
+- Log scopes
+  - a scope can group a set or logical operations, which can be used to attach the same data to each log thats created as part of a set, i.e. every log can include that trasnaction ID:
+
+````c#
+[HttpGet("{id}")]
+public async Task<ActionResult<TodoItemDTO>> GetTodoItem(long id)
+{
+    TodoItem todoItem;
+    var transactionId = Guid.NewGuid().ToString();
+    using (_logger.BeginScope(new List<KeyValuePair<string, object>>
+        {
+            new KeyValuePair<string, object>("TransactionId", transactionId),
+        }))
+    {
+        _logger.LogInformation(MyLogEvents.GetItem, "Getting item {Id}", id);
+
+        todoItem = await _context.TodoItems.FindAsync(id);
+
+        if (todoItem == null)
+        {
+            _logger.LogWarning(MyLogEvents.GetItemNotFound, 
+                "Get({Id}) NOT FOUND", id);
+            return NotFound();
+        }
+    }
+
+    return ItemToDTO(todoItem);
+}
+````
+
+#### Health checks
+- 
+
+
+---
+
 - Routing 
   - A Route is a URL pattern mapped to a handler. The handler is typically a controller or a middleware. Dotnet routing gives you control over the URLs used by your app. 
 
@@ -667,4 +871,4 @@ public class IndexModel : PageModel
     - Adds a configurable logging experience via ILogger for all requests sent through clients created by the factory. 
 
 
-  /// note: up to logging and monitoring: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/logging/?view=aspnetcore-8.0
+  /// note: up to health checks: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks?view=aspnetcore-8.0
