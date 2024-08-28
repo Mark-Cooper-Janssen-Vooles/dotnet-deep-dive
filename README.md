@@ -13,7 +13,7 @@ Contents:
   - [Logging and monitoring](#logging-and-monitoring)
       - [Health checks](#health-checks)
   - [HttpContext](#httpcontext)
-  - Routing
+  - [Routing](#routing)
   - Handle errors
   - Make HTTP requests
   - Static Files 
@@ -1017,12 +1017,123 @@ spec:
 ---
 
 ### HttpContext
+- HttpContext encapsulates all info about an individual HTTP request and response.
+- A HttpContext instance is initialized when a HTTP request is received. The HttpContext instance is accessible by middleware and app frameworks such as api controllers, razor pages, signalR etc.
 
+- HttpRequest 
+  - HttpContext.Request provides acces - HttpRequest has information about the incoming HTTP request and is initiated when a request is received by the server.
+  - middleware can change request values in the middleware pipeline.
+  - commonly used are things like `HttpRequest.Method` (e.g. GET), `HttpRequest.Headers`, `HttpRequest.Query` (values passed as query string), `HttpRequest.Body` (a stream for reading the request body)
+- HttpRequest.Headers provides access to the request headers sent with the request. 
+  - You can either provide the header name to the indexer on the header collection, i.e. `request.Headers["x-custom-header"]` or like `request.Headers.UserAgent` for commonly used ones. 
+- Read request body
+  - the request body is data associated with the request, such as the content of a JSON payload.
+  - read using `context.Request.Body.CopyToAsync(writeStream)`
+
+````c#
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapPost("/uploadstream", async (IConfiguration config, HttpContext context) =>
+{
+    var filePath = Path.Combine(config["StoredFilesPath"], Path.GetRandomFileName());
+
+    await using var writeStream = File.Create(filePath);
+    await context.Request.Body.CopyToAsync(writeStream);
+});
+
+app.Run();
+````
+
+- HttpResponse
+  - accessed by `HttpContext.Response`
+  - used to set information on the HTTP response sent back to the client
+  - commonly used: `HttpResponse.StatusCode`, `HttpResponse.ContentType`, `HttpResponse.Headers`, `HttpResponse.Body`.
+- HttpResponse.Headers provides access to the response headers sent with the HTTP response
+  - set custom headers: `response.Headers["x-custom-header"] = "Custom value";`
+  - set common headers: `response.Headers.CacheControl = "no-cache"`
+- Write response Body
+  - the response body is data associated with the response, such as a JSON payload
+
+
+Request Aborted
+- a `HttpContext.RequestAborted` cancellation token can be used to notify that the HTTP request has been aborted by the client or server. 
+  - i.e. aborting a db query or http request to get data to return in the response 
+  - the requestAborted cancellation token doesn't need to be used for request body read operations because reads always throw immediately when the request is aborted. 
+    - also usually unnecessary when writing response bodies ebcause the writes immediately no-op when the request is aborted. 
+
+````c#
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+var httpClient = new HttpClient();
+app.MapPost("/books/{bookId}", async (int bookId, HttpContext context) =>
+{
+    var stream = await httpClient.GetStreamAsync(
+        $"http://contoso/books/{bookId}.json", context.RequestAborted);
+
+    // Proxy the response as JSON
+    return Results.Stream(stream, "application/json");
+});
+
+app.Run();
+````
+
+Abort()
+- `httpContext.Abort()` can be used to abort a HTTP request from the server. 
+  - this immediately triggers the `HttpContext.RequestAborted` cancellation token and sends a notification to the client that the server has aborted the request. 
+
+````c#
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.Use(async (context, next) =>
+{
+    if (RequestAppearsMalicious(context.Request))
+    {
+        // Malicious requests don't even deserve an error response (e.g. 400).
+        context.Abort();
+        return;
+    }
+
+    await next.Invoke();
+});
+
+app.Run();
+````
+
+HttpContext isn't thread safe
+- i.e. when using async methods, ensure that HttpContext isn't accessed after the method has yielded control (i.e. after an 'await')
 
 ---
 
-- Routing 
-  - A Route is a URL pattern mapped to a handler. The handler is typically a controller or a middleware. Dotnet routing gives you control over the URLs used by your app. 
+### Routing 
+- A Route is a URL pattern mapped to a handler. The handler is typically a controller or a middleware. Dotnet routing gives you control over the URLs used by your app. 
+  - depenses incoming requests to the app's executable endpoints 
+  - endpoints are the app's units of executable request-handling code 
+- Routing uses a pair of middleware, registered by `UseRouting` and `UseEndpoints`
+  - `UseRouting` adds route matching to the middleware pipeline: it looks at the set of endpoints defined in the app and selects the best match based on the request
+  - `UseEndpoints` adds endpoint execution to the middleware pipeline. It runs the delegate associated with the selected endpoint.
+  - apps typically don't need to call these, `WebApplicationBuilder` adds them - however we can change the order they're run by calling the methods expilcitly. 
+- Endpoints
+  - Endpoints that can be matched and executed by the app are configured in `UseEndpoints`. 
+    - we typically use `MapControllers` or `MapHealthchecks` (note: MapHealthChecks is similar to USeHealthChecks, generally Map is preferred)
+
+````c#
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapControllers();
+});
+````
+
+- the order matters. see below, `UseAuthentication` and `UseAuthorisation` add the authentication and authorization middleware. These are placed between `UseRouting` and `UseEndpoints` so that they can:
+  - see which endpoint was selected by `UseRouting`
+  - Apply an auth policy before `UseEndpoints` dispatches to the endpoint
+
+
+  up to this part: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/routing?view=aspnetcore-8.0#url-matching
+
+---
 
 - Make HTTP Requests
   - An implementation of `IHttpClientFactory` is available for creating `HttpClient` instances. The factory:
