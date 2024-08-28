@@ -12,7 +12,7 @@ Contents:
   - [Environments](#environments)
   - [Logging and monitoring](#logging-and-monitoring)
       - [Health checks](#health-checks)
-  - HttpContext
+  - [HttpContext](#httpcontext)
   - Routing
   - Handle errors
   - Make HTTP requests
@@ -854,7 +854,169 @@ public async Task<ActionResult<TodoItemDTO>> GetTodoItem(long id)
 ````
 
 #### Health checks
-- 
+
+- healthchecks are offered by dotnet and exposed as HTTP endpoints as a way of reporting the health of app infrastructure
+- healthprobes often used by container orchestrators and load balancers to check the apps status (maybe restarting a container or routing traffic away from the failing instance)
+- health checks typically used with an external monitoring service (before using, decide on which monitoring system to use)
+
+Basic Health Probe:
+- for many apps this is sufficient - reports the apps availability to process requests 
+- basic config calls health check middleware to respond to a url with a health response
+  - by default, no specific health checks are registered to test any particular dependency or subsystem
+  - the app is considered healthy if it can respond at the health endpoint URL.
+- register `AddHealthChecks` in Program.cs then create a health check endpoint by calling `MapHealthChecks`
+
+````c#
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddHealthChecks();
+
+var app = builder.Build();
+
+app.MapHealthChecks("/healthz"); // creates an endpoint at '/healthz'
+
+app.Run();
+````
+
+Docker HEALTHCHECK:
+- docker offers a built-in HEALTHCHECK directive that can be used to check the status of an app that uses the basic health check configuration: 
+  - `HEALTHCHECK CMD curl --fail http://localhost:5000/healthz || exit`
+
+Create Health Checks: (non-default/basic)
+- implemented with the IHealthCheck interface.
+- CheckHealthAsync returns a HealthCheckResult that includes the health as Healthy, Degraded, or Unhealthy
+- the health checks logic is placed in the CheckHealthAsync method
+
+````c#
+public class SampleHealthCheck : IHealthCheck
+{
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        var isHealthy = true;
+
+        // ...
+
+        if (isHealthy)
+        {
+            return Task.FromResult(
+                HealthCheckResult.Healthy("A healthy result."));
+        }
+
+        return Task.FromResult(
+            new HealthCheckResult(
+                context.Registration.FailureStatus, "An unhealthy result."));
+    }
+}
+````
+
+Register Health check services:
+- call AddCheck in Program.cs 
+
+````c#
+builder.Services.AddHealthChecks()
+    .AddCheck<SampleHealthCheck>("Sample"); // implements the above custom one
+
+builder.Services.AddHealthChecks()
+    .AddCheck("Sample", () => HealthCheckResult.Healthy("A healthy result.")); // in-line custom health check
+````
+
+Require Host:
+- requireHost specifies one or more permitted hosts for the health check endpoint. If a collection isn't supplied, any host is accepted
+- `app.mapHealthChecks("/healthz").RequireHost("www.contoso.com:5001");`
+
+
+Health check options:
+- provides an oppourtunity to customise health check behaviour:
+  - filter health checks
+    - by default the health check middleware runs all registered health checks
+    - to run a subset, provide a function that returns a boolean to the Predicate option 
+  - customise http status code
+    - use `ResultStatusCodes` to customise the mapping of health status to HTTP status codes. 
+  - suppress cache headers
+    - not cached by default
+    - why would you touch this, we dont want it cached
+  - customise output
+
+````c#
+app.MapHealthChecks("/healthz", new HealthCheckOptions
+{
+    Predicate = healthCheck => healthCheck.Tags.Contains("sample") // filter health checks, only those tagged with sample run
+});
+
+// customise http status code:
+app.MapHealthChecks("/healthz", new HealthCheckOptions
+{ // note these are the default used by the middleware
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Degraded] = StatusCodes.Status200OK,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    }
+});
+````
+
+Database Probe
+- a health check can specify a db query to run as a boolean test to indicate if the database is responding normally.
+- there is a nuget package to use to execute against a SQL db that does a SELECT 1 query (not supported by microsoft)
+- there is also a way to do this by using entity framework core 
+
+````c#
+// SQL query one
+var conStr = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrEmpty(conStr))
+{
+    throw new InvalidOperationException(
+                       "Could not find a connection string named 'DefaultConnection'.");
+}
+builder.Services.AddHealthChecks()
+    .AddSqlServer(conStr);
+
+// entity framework core one
+builder.Services.AddDbContext<SampleDbContext>(options =>
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<SampleDbContext>();
+````
+
+Readiness and Liveness probes:
+- in some scenarios, a pair of health checks is used
+  - readiness indicates if the app is running normally but not ready to receive requests
+  - liveness indicates an app has crashed and must be restarted 
+- i.e. an app must download a large config file before its ready to process requests 
+- how to do it here: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks?view=aspnetcore-8.0#separate-readiness-and-liveness-probes
+
+Kubernetes Example:
+- useful in an env such as kubernetes
+
+````yaml
+spec:
+  template:
+  spec:
+    liveness:
+    path: /ping
+    port: 80
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 1
+    readinessProbe:
+      # an http probe
+      httpGet:
+        path: /healthz
+        port: 80
+      # length of time to wait for a pod to initialize
+      # after pod startup, before applying health checking
+      initialDelaySeconds: 30
+      timeoutSeconds: 1
+    ports:
+      - containerPort: 80
+````
+
+---
+
+### HttpContext
 
 
 ---
@@ -871,4 +1033,4 @@ public async Task<ActionResult<TodoItemDTO>> GetTodoItem(long id)
     - Adds a configurable logging experience via ILogger for all requests sent through clients created by the factory. 
 
 
-  /// note: up to health checks: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks?view=aspnetcore-8.0
+  /// note: up to: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/use-http-context?view=aspnetcore-8.0
