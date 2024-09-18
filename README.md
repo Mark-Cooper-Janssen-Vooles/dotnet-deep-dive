@@ -15,11 +15,11 @@ Contents:
   - [HttpContext](#httpcontext)
   - [Routing](#routing)
   - [Handle errors](#handle-errors)
-  - Make HTTP requests
-  - Static Files 
-- [APIs](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/apis?view=aspnetcore-8.0) 
+  - [Make HTTP requests](#make-http-requests)
+- [APIs](#apis) 
   - Controller-based APIs
   - Minimal APIs
+  - OpenAPI
 - [Best practices](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0)
 - [Servers](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/?view=aspnetcore-8.0&tabs=windows)
   - Kestrel 
@@ -1307,12 +1307,185 @@ app.Use(async (context, next) =>
 ---
 
 ### Make HTTP Requests
-  - An implementation of `IHttpClientFactory` is available for creating `HttpClient` instances. The factory:
-    - Provides a central location for naming and configuring logical `HttpClient` instances. I.e., register and configure a github client for accessing Github.
-    - Supports registration and chaining of multiple delegating handlers to buuld an outgoing request middleware pipeline. This pattern is similar to dotnet's inbound middleware pipeline. It provides a mechanism to manage cross-cutting concerns for HTTP requests including caching, error handling, serialization, and logging. 
-    - Integrates with Polly - for transient fault handling. (circuit breaker)
-    - Manages the pooling and lifetime of underlying `HttpClientHandler` instances to avoid common DNS problems that occur when managing `HttpClient` lifetimes manually. 
-    - Adds a configurable logging experience via ILogger for all requests sent through clients created by the factory. 
+
+- An implementation of `IHttpClientFactory` is available for creating `HttpClient` instances. The factory is superior to just using HttpClient because it:
+  - Provides a central location for naming and configuring logical `HttpClient` instances. I.e., register and configure a github client for accessing Github.
+  - Supports registration and chaining of multiple delegating handlers to buuld an outgoing request middleware pipeline. This pattern is similar to dotnet's inbound middleware pipeline. It provides a mechanism to manage cross-cutting concerns for HTTP requests including caching, error handling, serialization, and logging. 
+  - Integrates with Polly - for transient fault handling. (circuit breaker)
+  - Manages the pooling and lifetime of underlying `HttpClientHandler` instances to avoid common DNS problems that occur when managing `HttpClient` lifetimes manually. 
+  - Adds a configurable logging experience via ILogger for all requests sent through clients created by the factory. 
+
+- Basic Usage
+  - register IHttpClientFactory by calling AddHttpClient in Program.cs: `builder.Services.AddHttpClient();`
+  - an example of creating an instance:
+
+````c#
+public class BasicModel : PageModel
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public BasicModel(IHttpClientFactory httpClientFactory) =>
+        _httpClientFactory = httpClientFactory;
+
+    public IEnumerable<GitHubBranch>? GitHubBranches { get; set; }
+
+    public async Task OnGet()
+    {
+        var httpRequestMessage = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://api.github.com/repos/dotnet/AspNetCore.Docs/branches")
+        {
+            Headers =
+            {
+                { HeaderNames.Accept, "application/vnd.github.v3+json" },
+                { HeaderNames.UserAgent, "HttpRequestsSample" }
+            }
+        };
+
+        var httpClient = _httpClientFactory.CreateClient();
+        var httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+
+        if (httpResponseMessage.IsSuccessStatusCode)
+        {
+            using var contentStream =
+                await httpResponseMessage.Content.ReadAsStreamAsync();
+            
+            GitHubBranches = await JsonSerializer.DeserializeAsync
+                <IEnumerable<GitHubBranch>>(contentStream);
+        }
+    }
+}
+````
+
+- named clients
+  - a good choice when the app requires many distinct uses of `HttpClient` / many `HttpClient`s have different configuration
+
+````c#
+// an example of a named client:
+builder.Services.AddHttpClient("GitHub", httpClient =>
+{
+    httpClient.BaseAddress = new Uri("https://api.github.com/");
+
+    // using Microsoft.Net.Http.Headers;
+    // The GitHub API requires two headers.
+    httpClient.DefaultRequestHeaders.Add(
+        HeaderNames.Accept, "application/vnd.github.v3+json");
+    httpClient.DefaultRequestHeaders.Add(
+        HeaderNames.UserAgent, "HttpRequestsSample");
+});
+````
+
+- CreateClient
+  - each time a createClient is called:
+    - a new instance of HttpClient is created
+    - the configuration action is called
+  - to create a named client, pass its name into `CreateClient`: 
+
+````c#
+public class NamedClientModel : PageModel
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public NamedClientModel(IHttpClientFactory httpClientFactory) =>
+        _httpClientFactory = httpClientFactory;
+
+    public IEnumerable<GitHubBranch>? GitHubBranches { get; set; }
+
+    public async Task OnGet()
+    {
+        var httpClient = _httpClientFactory.CreateClient("GitHub"); // 'Github' is the named clients name - same as above
+        var httpResponseMessage = await httpClient.GetAsync(
+            "repos/dotnet/AspNetCore.Docs/branches"); // note that no base address is passed, it uses the one in the config for the named client.
+
+        if (httpResponseMessage.IsSuccessStatusCode)
+        {
+            using var contentStream =
+                await httpResponseMessage.Content.ReadAsStreamAsync();
+            
+            GitHubBranches = await JsonSerializer.DeserializeAsync
+                <IEnumerable<GitHubBranch>>(contentStream);
+        }
+    }
+}
+````
+
+- Typed Clients (preferred over named clients)
+  - same functionality as named clients but don't need to use strings as keys
+  - provides intellisense when consuming clients 
+  - provides a single location to configure and interact with a particular httpClient 
+  - work with DI and injected where required.
+
+````c#
+public class GitHubService
+{
+    private readonly HttpClient _httpClient;
+
+    public GitHubService(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+
+        _httpClient.BaseAddress = new Uri("https://api.github.com/");
+
+        // using Microsoft.Net.Http.Headers;
+        // The GitHub API requires two headers.
+        _httpClient.DefaultRequestHeaders.Add(
+            HeaderNames.Accept, "application/vnd.github.v3+json");
+        _httpClient.DefaultRequestHeaders.Add(
+            HeaderNames.UserAgent, "HttpRequestsSample");
+    }
+
+    public async Task<IEnumerable<GitHubBranch>?> GetAspNetCoreDocsBranchesAsync() =>
+        await _httpClient.GetFromJsonAsync<IEnumerable<GitHubBranch>>(
+            "repos/dotnet/AspNetCore.Docs/branches");
+}
+
+// in startup.cs:
+builder.Services.AddHttpClient<GitHubService>();
+
+// typed client can then be consumed directly: 
+public class TypedClientModel : PageModel
+{
+    private readonly GitHubService _gitHubService;
+
+    public TypedClientModel(GitHubService gitHubService) =>
+        _gitHubService = gitHubService;
+
+    public IEnumerable<GitHubBranch>? GitHubBranches { get; set; }
+
+    public async Task OnGet()
+    {
+        try
+        {
+            GitHubBranches = await _gitHubService.GetAspNetCoreDocsBranchesAsync();
+        }
+        catch (HttpRequestException)
+        {
+            // ...
+        }
+    }
+}
+````
 
 
-  /// note: up to: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/use-http-context?view=aspnetcore-8.0
+- Make POST, PUT and DELETE requests
+  - previous examples just showed get, but they are all supported
+  - to do a POST you can do something like this:  `using var httpResponseMessage = await _httpClient.PostAsync("/api/TodoItems", todoItemJson);`
+
+
+- use Polly-based handlers: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/http-requests?view=aspnetcore-8.0#use-polly-based-handlers 
+  - IHttpClientFactory integrates with the nuget package Polly, which is a resilience and transient fault-handling library for dotnet.
+    - allows retry, circuit breaker, timeout etc..
+
+````c#
+builder.Services.AddHttpClient("PollyMultiple")
+    .AddTransientHttpErrorPolicy(policyBuilder =>
+        policyBuilder.RetryAsync(3))
+    .AddTransientHttpErrorPolicy(policyBuilder =>
+        policyBuilder.CircuitBreakerAsync(5, TimeSpan.FromSeconds(30)));
+````
+
+---
+
+## APIs
+
+  /// note: up to APIs: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/apis?view=aspnetcore-8.0
