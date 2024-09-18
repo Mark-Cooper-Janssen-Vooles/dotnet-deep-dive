@@ -14,7 +14,7 @@ Contents:
       - [Health checks](#health-checks)
   - [HttpContext](#httpcontext)
   - [Routing](#routing)
-  - Handle errors
+  - [Handle errors](#handle-errors)
   - Make HTTP requests
   - Static Files 
 - [APIs](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/apis?view=aspnetcore-8.0) 
@@ -1130,12 +1130,183 @@ app.UseEndpoints(endpoints =>
   - see which endpoint was selected by `UseRouting`
   - Apply an auth policy before `UseEndpoints` dispatches to the endpoint
 
+- URL Matching
+  - the process by which routing matches an incoming request to an endpoint
+  - based on the data in the URL path and headers
+  - can be extended to consider any data in the request 
 
-  up to this part: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/routing?view=aspnetcore-8.0#url-matching
+- Route Constraints: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/routing?view=aspnetcore-8.0#route-constraints
+  - ensures endpoints are only matched when they match. i.e. instead of `"users/{id}"` you can have `"users/{id:int}"` - it only matches when its an int.
+  - more complex ones available, i.e. `{filename:length(8,16)}` means string must be between 8 and 16 characters long 
+  - regular expressions can be used too... this is potentially expensive and time consuming.
+
+````c#
+[Route("users/{id:int:min(1)}")]
+public User GetUserById(int id) { }
+````
+
+  - can also make custom route constraints
+
+- Optional route parameter order
+  - optional params must come after all required route params and literals
+
+````c#
+[Route("api/[controller]")]
+public class MyController : ControllerBase
+{
+    // GET /api/my/red/2/joe
+    // GET /api/my/red/2
+    // GET /api/my
+    [HttpGet("{color}/{id:int?}/{name?}")]
+    public IActionResult GetByIdAndOptionalName(string color, int id = 1, string? name = null)
+    {
+        return Ok($"{color} {id} {name ?? ""}");
+    }
+}
+````
+
+- Host matching in routes with RequireHost
+  - applies a constraint to the route which requires the specific host, i.e: wwww.domain.com or *.domain.com would match subdomain.domain.com or wwww.subdomain.domain.com
+  - for ports something like *.domain.com:5000
+  - multiple params can be used
+
+````c#
+[Host("contoso.com", "adventure-works.com")]
+public class HostsController : Controller
+{
+    public IActionResult Index() =>
+        View();
+
+    [Host("example.com")]
+    public IActionResult Example() =>
+        View();
+}
+````
 
 ---
 
-- Make HTTP Requests
+### Handle Errors
+
+- Problem details
+  - problem details are commonly used to report errors for HTTP APIs
+  - implements the `IProblemDetailsService` which supports creating problem details
+  - the `AddProblemDetails()` extension method on services registers the default `IProblemDetailsService` implementation
+
+````c#
+builder.Services.AddProblemDetails();
+
+var app = builder.Build();        
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler();
+    app.UseHsts();
+}
+````
+
+- Customise Problem Details
+  - creation of problemDetails can be customised using one of the following options:
+    1. ProblemDetailsOptions.CustomizeProblemDetails
+    2. using a custom IProblemDetailsWriter
+    3. call the IProblemDetailsService in a middleware
+  - CustomizeProblemDetails operation:
+    1. the customisations here are applied to all auto-generated problem details:
+
+````c#
+builder.Services.AddProblemDetails(options =>
+  options.CustomizeProblemDetails = ctx =>
+          ctx.ProblemDetails.Extensions.Add("nodeId", Environment.MachineName));
+````
+
+  - with the above, a 400 bad request will produce this problem details reponse body:
+
+````json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "Bad Request",
+  "status": 400,
+  "nodeId": "my-machine-name"
+}
+````
+
+  2. Custom IProblemDetailsWriter:
+    - created for more advanced customisations 
+    - When using a custom IProblemDetailsWriter, the custom IProblemDetailsWriter must be registered before calling 
+
+````c#
+public class SampleProblemDetailsWriter : IProblemDetailsWriter
+{
+    // Indicates that only responses with StatusCode == 400
+    // are handled by this writer. All others are
+    // handled by different registered writers if available.
+    public bool CanWrite(ProblemDetailsContext context)
+        => context.HttpContext.Response.StatusCode == 400;
+
+    public ValueTask WriteAsync(ProblemDetailsContext context)
+    {
+        // Additional customizations.
+
+        // Write to the response.
+        var response = context.HttpContext.Response;
+        return new ValueTask(response.WriteAsJsonAsync(context.ProblemDetails));
+    }
+}
+
+// in startup:
+builder.Services.AddTransient<IProblemDetailsWriter, SampleProblemDetailsWriter>();
+// Middleware to handle writing problem details to the response.
+app.Use(async (context, next) =>
+{
+    await next(context);
+    var mathErrorFeature = context.Features.Get<MathErrorFeature>();
+    if (mathErrorFeature is not null)
+    {
+        if (context.RequestServices.GetService<IProblemDetailsWriter>() is
+            { } problemDetailsService)
+        {
+
+            if (problemDetailsService.CanWrite(new ProblemDetailsContext() { HttpContext = context }))
+            {
+                (string Detail, string Type) details = mathErrorFeature.MathError switch
+                {
+                    MathErrorType.DivisionByZeroError => ("Divison by zero is not defined.",
+                        "https://en.wikipedia.org/wiki/Division_by_zero"),
+                    _ => ("Negative or complex numbers are not valid input.",
+                        "https://en.wikipedia.org/wiki/Square_root")
+                };
+
+                await problemDetailsService.WriteAsync(new ProblemDetailsContext
+                {
+                    HttpContext = context,
+                    ProblemDetails =
+                    {
+                        Title = "Bad Input",
+                        Detail = details.Detail,
+                        Type = details.Type
+                    }
+                });
+            }
+        }
+    }
+});
+
+// add controllers etc now.
+
+````
+
+  3. problem details from middleware
+    - An alternative approach to using ProblemDetailsOptions with CustomizeProblemDetails is to set the ProblemDetails in middleware. A problem details response can be written by calling IProblemDetailsService.WriteAsync
+
+
+- Produce a problem details payload for exceptions, info here: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling?view=aspnetcore-8.0#produce-a-problemdetails-payload-for-exceptions
+
+
+- an alternative to produce problem details is to use a nuget package  
+
+
+---
+
+### Make HTTP Requests
   - An implementation of `IHttpClientFactory` is available for creating `HttpClient` instances. The factory:
     - Provides a central location for naming and configuring logical `HttpClient` instances. I.e., register and configure a github client for accessing Github.
     - Supports registration and chaining of multiple delegating handlers to buuld an outgoing request middleware pipeline. This pattern is similar to dotnet's inbound middleware pipeline. It provides a mechanism to manage cross-cutting concerns for HTTP requests including caching, error handling, serialization, and logging. 
