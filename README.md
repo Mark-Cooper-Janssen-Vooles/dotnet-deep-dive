@@ -17,7 +17,7 @@ Contents:
   - [Handle errors](#handle-errors)
   - [Make HTTP requests](#make-http-requests)
 - [APIs](#apis) 
-  - Controller-based APIs
+  - [Controller-based APIs](#controller-based-apis)
   - Minimal APIs
   - OpenAPI
 - [Best practices](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0)
@@ -1487,5 +1487,102 @@ builder.Services.AddHttpClient("PollyMultiple")
 ---
 
 ## APIs
+
+- Dotnet supports two approaches to creating APIs: a controller-based approach and minimal APIs
+- Controllers derive from `ControllerBase`
+  - controllers are classes that can take dependencies via construction injection or property injection and follow OOP patterns.
+- Minimal APIs define endpoints with logical handlers in lambdas or methods
+  - Minial apis hides the host class by default and focuses on config and extensibility via extension methods that take functions as lambda expressions
+
+- Example of controller method:
+````c#
+// program.cs
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+
+        builder.Services.AddControllers();
+        var app = builder.Build();
+
+        app.UseHttpsRedirection();
+
+        app.MapControllers();
+
+        app.Run();
+    }
+}
+
+// WeatherForecastController.cs
+[ApiController]
+[Route("[controller]")]
+public class WeatherForecastController : ControllerBase
+{
+    private static readonly string[] Summaries = new[]
+    {
+        "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+    };
+
+    private readonly ILogger<WeatherForecastController> _logger;
+
+    public WeatherForecastController(ILogger<WeatherForecastController> logger)
+    {
+        _logger = logger;
+    }
+
+    [HttpGet(Name = "GetWeatherForecast")]
+    public IEnumerable<WeatherForecast> Get()
+    {
+        return Enumerable.Range(1, 5).Select(index => new WeatherForecast
+        {
+            Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+            TemperatureC = Random.Shared.Next(-20, 55),
+            Summary = Summaries[Random.Shared.Next(Summaries.Length)]
+        })
+        .ToArray();
+    }
+}
+````
+
+- the following code is the same but via minimal APIs:
+````c#
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+
+        var app = builder.Build();
+
+        app.UseHttpsRedirection();
+
+        var summaries = new[]
+        {
+            "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+        };
+
+        app.MapGet("/weatherforecast", (HttpContext httpContext) =>
+        {
+            var forecast = Enumerable.Range(1, 5).Select(index =>
+                new WeatherForecast
+                {
+                    Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+                    TemperatureC = Random.Shared.Next(-20, 55),
+                    Summary = summaries[Random.Shared.Next(summaries.Length)]
+                })
+                .ToArray();
+            return forecast;
+        });
+
+        app.Run();
+    }
+}
+````
+
+- minimal APIs have the same capabilities as controller-based APIs bar a few
+- in projects i've worked with we use controller-based apis for the main endpoints, minimal APIs are used for things like healthchecks and ping endpoints.
+
+### Controller-based APIs
 
   /// note: up to APIs: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/apis?view=aspnetcore-8.0
