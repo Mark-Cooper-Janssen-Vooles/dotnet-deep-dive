@@ -1584,5 +1584,55 @@ public class Program
 - in projects i've worked with we use controller-based apis for the main endpoints, minimal APIs are used for things like healthchecks and ping endpoints.
 
 ### Controller-based APIs
+- should derivce from ControllerBase rather than Controller (controller adds supports for views, so its not for web API requests)
+- ControllerBase class provides many properties and methods useful for handling HTTP requests, i.e. CreatedAtAction returns a 201 status code 
+  - list of all methods is [here](https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.mvc.controllerbase?view=aspnetcore-8.0)
+````c#
+[HttpPost]
+[ProducesResponseType(StatusCodes.Status201Created)]
+[ProducesResponseType(StatusCodes.Status400BadRequest)]
+public ActionResult<Pet> Create(Pet pet)
+{
+    pet.Id = _petsInMemoryStore.Any() ? 
+             _petsInMemoryStore.Max(p => p.Id) + 1 : 1;
+    _petsInMemoryStore.Add(pet);
+
+    return CreatedAtAction(nameof(GetById), new { id = pet.Id }, pet);
+}
+````
+- the ` Microsoft.AspNetCore.Mvc` namespace provides attributes that can be used to configure the behavior of web API controllers and action methods
+- the below coase uses attributes to specify the supported HTTP action verb and any known HTTP status codes that could be returned:
+````c#
+[HttpPost] // http action verb
+[ProducesResponseType(StatusCodes.Status201Created)] // status code
+[ProducesResponseType(StatusCodes.Status400BadRequest)] // status code
+public ActionResult<Pet> Create(Pet pet)
+{
+    pet.Id = _petsInMemoryStore.Any() ? 
+             _petsInMemoryStore.Max(p => p.Id) + 1 : 1;
+    _petsInMemoryStore.Add(pet);
+
+    return CreatedAtAction(nameof(GetById), new { id = pet.Id }, pet);
+}
+````
+- list of all methods is [here](https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.mvc.controllerbase?view=aspnetcore-8.0)
+
+
+- the `[ApiController]` attribute can be put on the controller class (see above the weatherforecastcontroller) to enable the following opinionated, api-specific behaviours:
+  - Attribute routing requirement (i.e. you need `[Route("[controller]")]` under it)
+  - Automatic HTTP 400 responses - model validation errors automatically trigger a http 400 response, no need to return a `BadRequest()`.
+  - Binding source interface - defines the location at which an action parameters value is found (i.e. `[FromBody], [FromForm], [FromHeader], [FromQuery]`... etc)
+  - problem details for error status codes - transforms an error result (a statys 400 or higher) to a result with `ProblemDetails`.
+    - consider `if (pet == nul) return NotFound();` - this would return a problemDetails body like so:
+````json
+{
+  type: "https://tools.ietf.org/html/rfc7231#section-6.5.4",
+  title: "Not Found",
+  status: 404,
+  traceId: "0HLHLV31KRN83:00000001"
+}
+````
+
+---
 
   /// note: up to APIs: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/apis?view=aspnetcore-8.0
