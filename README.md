@@ -7,7 +7,6 @@ Contents:
   - [Middleware](#middleware)
     - [Custom middleware example](#example-of-writing-a-custom-middleware)
   - [Host](#host)
-  - [Servers](#servers)
   - [Configuration](#configuration)
   - [Environments](#environments)
   - [Logging and monitoring](#logging-and-monitoring)
@@ -18,12 +17,12 @@ Contents:
   - [Make HTTP requests](#make-http-requests)
 - [APIs](#apis) 
   - [Controller-based APIs](#controller-based-apis)
-  - Minimal APIs
-  - OpenAPI
+  - [Minimal APIs](#minimal-apis)
+  - [OpenAPI](#openapi)
 - [Best practices](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0)
-- [Servers](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/?view=aspnetcore-8.0&tabs=windows)
-  - Kestrel 
-  - IIS
+  - [Servers](#servers)
+  - [Kestrel](#kestrel)
+  - IIS (only windows, for dotnet 8 or higher use kestrel)
 - [Security and Identity](https://learn.microsoft.com/en-us/aspnet/core/security/?view=aspnetcore-8.0)
   - Authentication
   - Authorization
@@ -381,14 +380,6 @@ app.UseFileServer(); // add middleware
 
 app.Run()
 ````
-
----
-
-
-### Servers
-  - dotnet core apps use a HTTP server implementation to listen for HTTP request. The server surfaces requests to the app as a set of request features composed into a HttpContext 
-  - Kestrel is a cross-platform web server, it runs on windows / mac / linux. 
-  - IIS and HTTP.sys are for windows only. 
 
 ---
 
@@ -1633,6 +1624,51 @@ public ActionResult<Pet> Create(Pet pet)
 }
 ````
 
+### Minimal APIs
+- A simplified approach for building fast HTTP APIs 
+````c#
+var builder = WebApplication.CreateBuilder(args);
+
+var app = builder.Build();
+
+app.MapGet("/users/{userId}/books/{bookId}", 
+    (int userId, int bookId) => $"The user id is {userId} and book id is {bookId}");
+
+app.Run();
+````
+- quick reference [here](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis?view=aspnetcore-8.0)
+
+### OpenAPI
+- the openAPI spec is a programming language-agnostic standard for documenting HTTP APIs
+- 3 key aspects to integrating it into an app:
+  - generating info about the endpoints in the app
+  - gathering the info into a format that matches the openApi schema
+  - exposing the generated openAPI schema via a visual UI or serialised file 
+- more info [here](https://spec.openapis.org/oas/latest.html)
+
+- easily done through SwashBuckle (Swagger) or NSwag 
+  - Swagger was donated to openAPI, both names are used interchangably but Swagger is the tooling that uses openAPI specification
+
 ---
 
-  /// note: up to APIs: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/apis?view=aspnetcore-8.0
+## Servers
+- dotnet core apps use a HTTP server implementation to listen for HTTP request. The server surfaces requests to the app as a set of request features composed into a HttpContext 
+- Kestrel is a cross-platform web server, it runs on windows / mac / linux. 
+- IIS and HTTP.sys are for windows only. 
+
+- Kestrel server is the default cross-platform HTTP server implementation, providing the best performance.
+  - by itself it can be used as an edge server processing requests directly from a network, including the internet
+  - with a reverse proxy server such as IIS, Nginx or Apache it can receives HTTP requests from the internet and forward them to Kestrel (internet => https => reverse proxy server => HTTP => kestrel => httpContext => app code)
+    - using nginx with kestrel [here](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/linux-nginx?view=aspnetcore-8.0)
+
+- Server startup
+  - server is launched when the IDE starts the app
+    - for visual studio / rider, launch profiles can be used to start the app and server 
+  - the console can also be used to start the app, i.e. `dotnet run` which uses launchSettings.json. if launch profiles are present in launchSettings.json, use the `dotnet run --launch-profile {profileName}` option
+
+
+### Kestrel 
+- 
+
+---
+  /// note: up to kestrel: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel?view=aspnetcore-8.0
