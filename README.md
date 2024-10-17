@@ -21,13 +21,14 @@ Contents:
   - [OpenAPI](#openapi)
 - [Best practices](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0)
   - [Servers](#servers)
-  - [Kestrel](#kestrel)
-  - IIS (only windows, for dotnet 8 or higher use kestrel)
-- [Security and Identity](https://learn.microsoft.com/en-us/aspnet/core/security/?view=aspnetcore-8.0)
-  - Authentication
-  - Authorization
-  - Data protection
-  - Secrets Management
+    - [Kestrel](#kestrel)
+    - IIS (only windows, for dotnet 8 or higher use kestrel)
+- [Security and Identity](#security-and-identity)
+  - [Authentication](#authentication)
+    - [Identity](#identity)
+  - [Authorization](#authorisation)
+  - [Data protection](#data-protection)
+  - [Secrets Management](#secrets-management)
   - Enforce HTTPS
   - Host docker with HTTPs
   - Docker Compose with HTTPS
@@ -1668,7 +1669,100 @@ app.Run();
 
 
 ### Kestrel 
+- Configured by default in dot net 
+- cross platform, high performance, wide protocol support 
+
+````c#
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapGet("/", () => "Hello World!");
+
+app.Run();
+````
+
+---
+
+## Security and Identity 
+- dot net allows devs to configure and manage security to build robust and secure apps 
+- authentication: user provides credentials which are compared to those stored in a db. if matched, authenticated 
+- authorisation: if authenticated, users can perform actions they are authorised for (what a user is allowed to do)
+
+- common vulnerabilities in software
+  - Cross-site scripting (XSS) attacks 
+  - SQL injection attacks 
+  - Cross-site Request Forgery (XSRF / CSRF) attacks 
+  - Open redirect attacks 
+
+### Authentication 
+- the process of determining a users identity 
+- in dotnet authentication is handled by the authentication service, `IAuthenticationService`, which is used by authentication middleware. 
+  - the autheitcation services uses registered authentication handlers to complete authentication-related actions. Examples include:
+    - authenticating a user 
+    - responding when an unauthenticated user tries to access a restricted resource 
+  - the registered authentication handlers and their configuration options are called "schemes".
+  - authentication scheemes are specified by registering authentication services in Program.cs:
+    - by calling a scheme-specific extension method after a call to `AddAuthentication`, such as `AddJwtBearer` or `AddCookie`
+````c#
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme,
+        options => builder.Configuration.Bind("JwtSettings", options))
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme,
+        options => builder.Configuration.Bind("CookieSettings", options));
+````
+  - the `AddAuthentication` param `JwtBearerDefaults.AuthenticationScheme` is the name of the scheme to use by default when a specific scheme isn't requested. 
+
+
+- In some cases, the call to `AddAuthentication` is automatically made by other extension methods. I.e. when using Identity, AddAuthentication is called internally. 
+- the authentication middleware is added in Program.cs by calling `UseAuthentication`. This registers the middleware that uses the previously registered authentication scehemes. Call `useAuthentication` before any middleware that depends on users being authenticated. 
+
+Authentication Concepts 
+- Authentication is responsible for providing the `ClaimsPrincipal` for authorisation to make permission decisions against 
+- There are different scheme approaches to select which authentication handler is responsible for generating the correct set of claims 
+  - authentication sceheme
+  - directly set HttpContext.User
+- if only one scheme is registered, it because the default. if multiple schemes are registered, you must specify one in the authorize attribute or an error is thrown 
+
+authentication Scheme 
+- this scheme selects which authentication handler is responsible for generating the correct set of claims
+- the scheme name corresponds to an authentication handler 
+
+authentication handler 
+- this is a type that implements the behavior of a scheme 
+- derived from `IAuthenticationHandler` 
+- has the primary responsibility to authenticate users 
+- the auth handler constructs the AuthenticationTicket objects representing the users identity (if successful, returns 'no result' if unsuccessful)
+
+authenticate 
+- an authentication scheme's authenticate action is responsible for constructing the users identity based on request context. 
+- returns an authenticateResult indicating whether auth was successful, and if so, the users identity in an authentication ticket. i.e.:
+  - a cookie auth scheme constructing the users identity from cookies 
+  - a JWT bearer scheme deserializing and validating a JWT bearer token t oconstruct the users identity 
+
+Challenge 
+- an authentication challenge is invoked by Authorisation when an unauthenticated user requests and endpoint that requires authentication
+- challenge examples include:
+  - a cookie auth scheme redirecting the user to a login page 
+  - a JWT bearer scheme returning a 401 with a `www-authenticate: bearer` header 
+
+Forbid 
+- an auth scheme's forbid action is called by authorization when an authenticated user attempts to access a resource they're not allowed to. i.e.:
+  - a cookie auth scheme redirecting the user to a page indicating access is forbidden
+  - a JWT bearer scheme returning a 403 result 
+  - a custom auth scheme redirecting to a page where the user can request access 
+
+#### Identity 
+https://learn.microsoft.com/en-us/aspnet/core/security/authentication/identity?view=aspnetcore-8.0&tabs=visual-studio
+
 - 
+
+### Authorisation 
+
+### Data Protection 
+
+### Secrets Management
+
+### 
 
 ---
   /// note: up to kestrel: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel?view=aspnetcore-8.0
