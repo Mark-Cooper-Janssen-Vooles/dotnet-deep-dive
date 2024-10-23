@@ -28,28 +28,9 @@ Contents:
     - [Identity](#identity)
   - [Authorization](#authorisation)
   - [Secrets Management](#secrets-management)
-  - Enforce HTTPS
-  - Host docker with HTTPs
-  - Docker Compose with HTTPS
-  - GDPR support 
-  - Prevent XSRF / CSRF attacks 
-  - Prevent open redirect attacks
-  - Prevent XSS attacks 
-  - Enable CORS requests
-  - Share cookies among apps 
-  - SameSite cookies
-  - IP safelist 
-  - OWASP 
-- [Performance](https://learn.microsoft.com/en-us/aspnet/core/performance/overview?view=aspnetcore-8.0)
-  - Caching 
-  - Rate limiting middleware
-  - Timeouts middleware
-  - Memory and GC
-  - Object reuse with ObjectPool
-  - Response compression
-  - Diagnostic tools
-  - Load and stress testing 
-  - Event counters 
+- Performance
+  - [Caching](#caching)
+  - [Rate limiting middleware](#rate-limiting-middleware)
 
 ---
 
@@ -1802,10 +1783,77 @@ public IActionResult VacationBalance()
 - authorise based on roles:
 
 ### Secrets Management
+- How to manage sensitive data for a .net core app on a development machine
+- never store passwords or sensitive data in source code, access them for prod through somewhere like AWS param store or secrets manager.
+- consider an app where a default db connection string is included in the appsettings.json file with the key DefaultConnection.
+  - this string is for the localDB, which doesn't require a password. During deployment, this key value can be overridden with an environment variables value 
+
+### Performance 
+
+#### Caching 
+- In-memory caching
+  - uses server memory to store cached data
+  - suitable for a single server or multiple servers using session affinity (also known as sticky sessions, i.e. the request from a client are always routed to the same server for processing)
+- Distributed Cache
+  - used when the app is hosted in a cloud or server farm
+  - cache is shared across the servers that process requests 
+  - a client can submit a request thats handled by any server in the group if cached data for the client is available
+  - works with SQL server, redis and NCache
+````c#
+public class SomeService(IDistributedCache cache)
+{
+    public async Task<SomeInformation> GetSomeInformationAsync
+        (string name, int id, CancellationToken token = default)
+    {
+        var key = $"someinfo:{name}:{id}"; // Unique key for this combination.
+        var bytes = await cache.GetAsync(key, token); // Try to get from cache.
+        SomeInformation info;
+        if (bytes is null)
+        {
+            // Cache miss; get the data from the real source.
+            info = await SomeExpensiveOperationAsync(name, id, token);
+
+            // Serialize and cache it.
+            bytes = SomeSerializer.Serialize(info);
+            await cache.SetAsync(key, bytes, token);
+        }
+        else
+        {
+            // Cache hit; deserialize it.
+            info = SomeSerializer.Deserialize<SomeInformation>(bytes);
+        }
+        return info;
+    }
+
+    // This is the work we're trying to cache.
+    private async Task<SomeInformation> SomeExpensiveOperationAsync(string name, int id,
+        CancellationToken token = default)
+    { /* ... */ }
+}
+````
+- HybridCache
+  - recommended over the above two because of its simplicity of its api
+  - an abstract class with a default implementation that handles most aspects of saving to cache and retrieving from cache
+  - bridges some gaps in distributed cache and in-memory cache
+  - it has stampede protection (a frequently used cache entry is revoked and too many requests try to repopulated the same cache entry at the same time. it uses concurrent operations, ensuring that all requests for a given response wait for the first request to populated the cache)
+````c#
+public class SomeService(HybridCache cache)
+{
+    public async Task<SomeInformation> GetSomeInformationAsync
+        (string name, int id, CancellationToken token = default)
+    {
+        return await cache.GetOrCreateAsync(
+            $"someinfo:{name}:{id}", // Unique key for this entry.
+            async cancel => await SomeExpensiveOperationAsync(name, id, cancel),
+            token: token
+        );
+    }
+}
+````
+
+
+#### Rate Limiting Middleware 
+https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit?view=aspnetcore-8.0
 
 - 
 
-### 
-
----
-  /// note: up to kestrel: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel?view=aspnetcore-8.0
