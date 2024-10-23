@@ -27,7 +27,6 @@ Contents:
   - [Authentication](#authentication)
     - [Identity](#identity)
   - [Authorization](#authorisation)
-  - [Data protection](#data-protection)
   - [Secrets Management](#secrets-management)
   - Enforce HTTPS
   - Host docker with HTTPs
@@ -1754,13 +1753,57 @@ Forbid
 #### Identity 
 https://learn.microsoft.com/en-us/aspnet/core/security/authentication/identity?view=aspnetcore-8.0&tabs=visual-studio
 
-- 
+- .net identity is an API that supports UI login functionality - managing users, passwords, profile data, roles, claims, tokens etc
+- typically configured using an SQL server DB to store user names, passwords and profile data 
+- .net identity adds user UI login functionality. to secure web APIs you need to use something else 
 
 ### Authorisation 
+- Authorization refers to the process that determines what a user is able to do. E.g. an admin user is allowed to create a document library, add documents, edit documents and delete them. an non-admin user is only allowed to read them. 
+- authorization is independent from authentication, however authorization requires an authentication mechanism. 
+- Authorisation Types:
+  - .net authorization provides a simple declarative role and a rich policy-based model
+  - expressed in requirements, and handlers evaluate a users claims against requirements 
+- Authorization is controlled with the `[Authorize]` attribute and its various parameters (i.e. on a controller).
+````c#
+[Authorize] // protect the entire controller
+public class AccountController : Controller
+{
+    public ActionResult Login()
+    {
+    }
 
-### Data Protection 
+    //[Authorize] //alternatively you could just put it on some endpoints
+    public ActionResult Logout()
+    {
+    }
+}
+
+// authorise based on roles: https://learn.microsoft.com/en-us/aspnet/core/security/authorization/roles?view=aspnetcore-8.0
+[Authorize(Roles = "Administrator")]
+public class AdministrationController : Controller
+{
+    public IActionResult Index() =>
+        Content("Administrator");
+}
+
+// authorise based on claims or policies: 
+// claims: https://learn.microsoft.com/en-us/aspnet/core/security/authorization/claims?view=aspnetcore-8.0
+// policies: https://learn.microsoft.com/en-us/aspnet/core/security/authorization/policies?view=aspnetcore-8.0
+[Authorize(Policy = "EmployeeOnly")]
+public IActionResult VacationBalance()
+{
+    return View();
+}
+
+
+
+````
+- custom authorizors can also be used, see [here](https://learn.microsoft.com/en-us/aspnet/core/security/authorization/iard?view=aspnetcore-8.0)
+- authorise based on roles:
 
 ### Secrets Management
+
+- 
 
 ### 
 
