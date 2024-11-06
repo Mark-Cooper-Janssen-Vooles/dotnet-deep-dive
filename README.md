@@ -30,7 +30,7 @@ Contents:
   - [Secrets Management](#secrets-management)
 - Performance
   - [Caching](#caching)
-  - [Rate limiting middleware](#rate-limiting-middleware)
+
 
 ---
 
@@ -1851,9 +1851,4 @@ public class SomeService(HybridCache cache)
 }
 ````
 
-
-#### Rate Limiting Middleware 
-https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit?view=aspnetcore-8.0
-
-- 
 
